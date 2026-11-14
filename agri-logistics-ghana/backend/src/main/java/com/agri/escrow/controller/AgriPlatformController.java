@@ -66,12 +66,12 @@ public class AgriPlatformController {
         double supplyIndex = Double.parseDouble(p.getOrDefault("supplyIndex", 10.0).toString());
         String imageUrl = p.get("imageUrl").toString();
 
-        double qFactor = switch (qualityGrade) {
-            case "GRADE_A" -> 1.15;
-            case "GRADE_B" -> 1.00;
-            case "GRADE_C" -> 0.80;
-            default -> 1.00;
-        };
+        double qFactor = 1.00;
+        if ("GRADE_A".equals(qualityGrade)) {
+            qFactor = 1.15;
+        } else if ("GRADE_C".equals(qualityGrade)) {
+            qFactor = 0.80;
+        }
 
         double ratio = supplyIndex > 0 ? (1.0 + (demandIndex - supplyIndex) / supplyIndex) : 1.0;
         BigDecimal finalUnitPrice = BigDecimal.valueOf(basePrice * qFactor * ratio).setScale(2, RoundingMode.HALF_UP);
@@ -121,7 +121,6 @@ public class AgriPlatformController {
 
         BigDecimal totalEscrow = productCost.add(transportFee);
 
-        // Deduct from Buyer Wallet into Escrow Hold
         jdbc.update("UPDATE users SET wallet_balance = wallet_balance - ? WHERE user_id = ?", totalEscrow, buyerId);
         jdbc.update("UPDATE commodities SET quantity = quantity - ? WHERE commodity_id = ?", qty, commodityId);
 
@@ -148,7 +147,7 @@ public class AgriPlatformController {
         """);
     }
 
-    // 8. Driver Farm-Gate Verification & Collateral Freeze (Liability Transfers to Driver)
+    // 8. Driver Farm-Gate Verification & Collateral Freeze
     @PostMapping("/orders/{orderId}/driver-verify")
     @Transactional
     public Map<String, Object> driverVerifyPickup(@PathVariable int orderId, @RequestBody Map<String, Object> p) {
@@ -158,7 +157,6 @@ public class AgriPlatformController {
         Map<String, Object> order = jdbc.queryForMap("SELECT * FROM orders WHERE order_id = ?", orderId);
         BigDecimal productCost = (BigDecimal) order.get("product_cost");
 
-        // Freeze collateral equal to cargo value from Driver's collateral balance
         jdbc.update("UPDATE users SET collateral_balance = collateral_balance - ? WHERE user_id = ?", productCost, driverId);
         jdbc.update("""
             UPDATE orders SET driver_id = ?, pickup_photo_url = ?, escrow_status = 'IN_TRANSIT_VERIFIED'
@@ -177,7 +175,7 @@ public class AgriPlatformController {
         return Map.of("status", "GPS_UPDATED", "lat", lat, "lng", lng);
     }
 
-    // 10. Buyer Confirms Good Delivery -> Release Escrow + Add Trust & Loyalty Points
+    // 10. Buyer Confirms Good Delivery
     @PostMapping("/orders/{orderId}/confirm-delivery")
     @Transactional
     public Map<String, Object> confirmDelivery(@PathVariable int orderId) {
@@ -191,23 +189,19 @@ public class AgriPlatformController {
         int buyerId = (int) order.get("buyer_id");
         Integer driverId = (Integer) order.get("driver_id");
 
-        // Pay Seller & Reward +5 Trust +20 Loyalty
         jdbc.update("UPDATE users SET wallet_balance = wallet_balance + ?, trust_score = trust_score + 5, loyalty_points = loyalty_points + 20 WHERE user_id = ?", productCost, sellerId);
 
-        // Pay Driver, Release Collateral & Reward +5 Trust +20 Loyalty
         if (driverId != null) {
             jdbc.update("UPDATE users SET wallet_balance = wallet_balance + ?, collateral_balance = collateral_balance + ?, trust_score = trust_score + 5, loyalty_points = loyalty_points + 20 WHERE user_id = ?",
                     transportFee, productCost, driverId);
         }
 
-        // Reward Buyer Loyalty Points
         jdbc.update("UPDATE users SET loyalty_points = loyalty_points + 25 WHERE user_id = ?", buyerId);
-
         jdbc.update("UPDATE orders SET escrow_status = 'COMPLETED_SETTLED' WHERE order_id = ?", orderId);
         return Map.of("status", "COMPLETED_SETTLED");
     }
 
-    // 11. Buyer Raises Dispute (Bad Produce / Damaged Livestock)
+    // 11. Buyer Raises Dispute
     @PostMapping("/orders/{orderId}/dispute")
     @Transactional
     public Map<String, Object> raiseDispute(@PathVariable int orderId, @RequestBody Map<String, String> p) {
@@ -219,11 +213,11 @@ public class AgriPlatformController {
         return Map.of("status", "DISPUTED_FROZEN");
     }
 
-    // 12. Admin Resolves Dispute (Driver Guilty -> Money Paid to Seller + Refund Buyer)
+    // 12. Admin Resolves Dispute
     @PostMapping("/disputes/{orderId}/resolve")
     @Transactional
     public Map<String, Object> resolveDispute(@PathVariable int orderId, @RequestBody Map<String, String> p) {
-        String verdict = p.get("verdict"); // DRIVER_GUILTY or SELLER_GUILTY
+        String verdict = p.get("verdict");
 
         Map<String, Object> order = jdbc.queryForMap("""
             SELECT o.*, c.seller_id FROM orders o JOIN commodities c ON o.commodity_id = c.commodity_id WHERE o.order_id = ?
@@ -236,21 +230,16 @@ public class AgriPlatformController {
         int buyerId = (int) order.get("buyer_id");
         Integer driverId = (Integer) order.get("driver_id");
 
-        // Buyer always receives 100% refund for rejected bad goods
         jdbc.update("UPDATE users SET wallet_balance = wallet_balance + ? WHERE user_id = ?", totalRefund, buyerId);
 
         if ("DRIVER_GUILTY".equals(verdict)) {
-            // Driver verified healthy cargo at farm, then damaged it:
-            // 1. Seller STILL gets paid 100% of Product Cost from Driver's frozen collateral!
             jdbc.update("UPDATE users SET wallet_balance = wallet_balance + ?, trust_score = trust_score + 2 WHERE user_id = ?", productCost, sellerId);
-            // 2. Driver forfeits transport fee, loses frozen collateral, and loses 25 Trust Points
             if (driverId != null) {
-                jdbc.update("UPDATE users SET trust_score = trust_score - 25, is_suspended = (trust_score - 25 < 40) WHERE user_id = ?", driverId);
+                jdbc.update("UPDATE users SET trust_score = trust_score - 25 WHERE user_id = ?", driverId);
             }
             jdbc.update("UPDATE orders SET escrow_status = 'RESOLVED_DRIVER_GUILTY' WHERE order_id = ?", orderId);
         } else {
-            // Seller Guilty: Seller gets 0 and loses 25 Trust Points; Driver gets transport fee & collateral back
-            jdbc.update("UPDATE users SET trust_score = trust_score - 25, is_suspended = (trust_score - 25 < 40) WHERE user_id = ?", sellerId);
+            jdbc.update("UPDATE users SET trust_score = trust_score - 25 WHERE user_id = ?", sellerId);
             if (driverId != null) {
                 jdbc.update("UPDATE users SET wallet_balance = wallet_balance + ?, collateral_balance = collateral_balance + ?, trust_score = trust_score + 2 WHERE user_id = ?",
                         transportFee, productCost, driverId);
@@ -262,7 +251,7 @@ public class AgriPlatformController {
         return Map.of("status", "RESOLVED", "verdict", verdict);
     }
 
-    // 13. Top Performers Leaderboard (Trust Score & Loyalty)
+    // 13. Top Performers Leaderboard
     @GetMapping("/leaderboard")
     public List> getLeaderboard() {
         return jdbc.queryForList("""
