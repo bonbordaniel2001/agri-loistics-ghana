@@ -1,7 +1,7 @@
 services:
   - type: web
     name: agri-backend
-    env: java
+    env: maven
     region: frankfurt
     plan: free
     rootDir: agri-logistics-ghana/backend
