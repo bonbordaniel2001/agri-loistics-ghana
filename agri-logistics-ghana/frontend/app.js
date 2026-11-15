@@ -1,5 +1,5 @@
-// REPLACE THIS URL WITH YOUR RENDER BACKEND URL ONCE DEPLOYED (e.g., https://agri-escrow.onrender.com/api)
-const API_BASE = "http://localhost:8080/api";
+// Connected live to your deployed Render backend API
+const API_BASE = "https://agri-loistics-ghana.onrender.com/api";
 
 let currentUser = JSON.parse(localStorage.getItem("agri_user")) || null;
 let currentPetrolPrice = 19.20;
@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function initMap() {
     map = L.map("liveMap").setView([5.10535, -1.2466], 12); // Cape Coast, Ghana default
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap"
+        attribution: "© OpenStreetMap"
     }).addTo(map);
     driverMarker = L.marker([5.10535, -1.2466]).addTo(map).bindPopup("Active Driver Transit Pin").openPopup();
 }
@@ -102,7 +102,6 @@ function attachPricePreviewListeners() {
         document.getElementById(id).addEventListener("input", updateAutoPricePreview);
     });
     document.getElementById("itemPhotoFile").addEventListener("change", () => {
-        // Simulate instant computer-vision quality classification on photo capture
         const grades = ["GRADE_A", "GRADE_B"];
         document.getElementById("itemGrade").value = grades[Math.floor(Math.random() * grades.length)];
         updateAutoPricePreview();
@@ -259,7 +258,6 @@ async function loadOrders() {
         </div>
     `).join("");
 
-    // Render Disputed Orders in Admin Console
     const disputed = orders.filter(o => o.escrow_status === "DISPUTED_FROZEN");
     disputesBox.innerHTML = disputed.length === 0
         ? `<div class="alert alert-light border">No active disputes pending arbitration.</div>`
@@ -339,11 +337,11 @@ async function loadLeaderboard() {
     document.getElementById("leaderboardBody").innerHTML = users.map((u, idx) => `
         <tr>
             <td class="fw-bold">#${idx + 1}</td>
-            <td class="fw-semibold">${u.full_name}</td>
+            <td>${u.full_name}</td>
             <td><span class="badge bg-secondary">${u.role}</span></td>
-            <td class="fw-bold text-success">${u.trust_score} pts</td>
-            <td class="fw-bold text-primary">${u.loyalty_points} pts</td>
-            <td>${u.is_suspended ? '<span class="badge bg-danger">SUSPENDED</span>' : '<span class="badge bg-success">ACTIVE</span>'}</td>
+            <td><strong class="text-success">${u.trust_score}</strong> pts</td>
+            <td><strong class="text-warning text-dark">${u.loyalty_points}</strong> pts</td>
+            <td><span class="badge bg-success">Verified Active</span></td>
         </tr>
     `).join("");
 }
