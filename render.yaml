@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: agri-backend
+    env: java
+    region: frankfurt
+    plan: free
+    rootDir: agri-logistics-ghana/backend
+    buildCommand: ./mvnw clean package -DskipTests
+    startCommand: java -jar target/escrow-backend-1.0.0.jar
+    envVars:
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:postgresql://ep-old-math-bafbcsqp-pooler.c-8.eu-central-1.aws.neon.tech/neondb?sslmode=require
+      - key: SPRING_DATASOURCE_USERNAME
+        value: neondb_owner
+      - key: SPRING_DATASOURCE_PASSWORD
+        value: npg_FSNWmrE8a1jh
